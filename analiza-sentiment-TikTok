@@ -1,0 +1,81 @@
+import json
+import os
+import time
+import pandas as pd
+from textblob import TextBlob
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+
+
+service = Service(ChromeDriverManager().install())
+chrome_profile_path = r'C:\Users\Alexandru Necsoiu\AppData\Local\Google\Chrome\User Data'  # Schimbă cu calea ta corectă
+
+options = Options()
+options.add_argument(f"user-data-dir={chrome_profile_path}")
+options.add_argument("profile-directory=Default")  # Schimbă dacă folosești alt profil
+
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--remote-debugging-port=9222")  # Portul de debugging
+options.add_argument("--headless")  # Rulează Chrome fără fereastră (opțional)
+
+# Inițializare driver
+driver = webdriver.Chrome(service=service, options=options)
+
+if not os.path.exists("cookies.json"):
+    # Deschide TikTok și așteaptă logare manuală
+    driver.get("https://www.tiktok.com")
+    print(" Loghează-te manual în fereastra care s-a deschis.")
+    input(" După ce te-ai logat, apasă ENTER aici în terminal...")
+
+    cookies = driver.get_cookies()
+    with open("cookies.json", "w") as f:
+        json.dump(cookies, f, indent=2)
+
+    print(" Cookie-urile au fost salvate în 'cookies.json'.")
+else:
+    with open("cookies.json", "r") as f:
+        cookies = json.load(f)
+
+    # Accesează TikTok inițial pentru setarea cookie-urilor
+    driver.get("https://www.tiktok.com")
+    time.sleep(3)
+    for cookie in cookies:
+        cookie.pop("sameSite", None)  # Șterge dacă există pentru a evita eroarea
+        driver.add_cookie(cookie)
+
+video_url = 'https://www.tiktok.com/@bars/video/7493210900749503774'  # Schimbă cu linkul tău
+driver.get(video_url)
+time.sleep(5)
+
+for _ in range(10):  
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(2)
+
+# Extrage comentariile
+comments = []
+comment_elements = driver.find_elements(By.CSS_SELECTOR, 'p[data-e2e="comment-level-1"]')
+for elem in comment_elements:
+    comments.append(elem.text)
+driver.quit()
+
+# Analiză de sentiment
+def get_sentiment(text):
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    if polarity > 0:
+        return 'Pozitiv'
+    elif polarity < 0:
+        return 'Negativ'
+    return 'Neutru'
+
+results = [{'Comentariu': c, 'Sentiment': get_sentiment(c)} for c in comments]
+df = pd.DataFrame(results)
+
+df.to_csv("comentarii_tiktok.csv", index=False, encoding='utf-8-sig')
+
+print(f" Comentarii extrase: {len(comments)}")
+print(df.head())
